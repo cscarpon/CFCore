@@ -1,0 +1,5 @@
+^renv$
+^renv\.lock$
+^CFCore\.Rproj$
+^\.Rproj\.user$
+^LICENSE\.md$
