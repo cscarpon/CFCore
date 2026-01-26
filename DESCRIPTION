@@ -1,16 +1,43 @@
 Package: CFCore
-Title: What the Package Does (One Line, Title Case)
+Title: Core Spatial and Point Cloud Utilities for CloudFlux
 Version: 0.0.0.9000
 Authors@R: 
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"))
-Description: What the package does (one paragraph).
+    person(
+      given = "Christopher",
+      family = "Scarpone",
+      role = c("aut", "cre"),
+      email = "chris.scarpone@gmail.com"
+    )
+Description: 
+    Provides core, UI-agnostic utilities for processing and analyzing spatial
+    raster data, vector geometries, and LiDAR point clouds. The package supports
+    continuous change detection workflows (e.g., DTM and nDSM differencing),
+    spatial masking and reprojection, raster alignment and resampling, point
+    cloud denoising, and ICP-based alignment helpers. Designed as the computational
+    backbone for the CloudFlux ecosystem, CFCore is suitable for use in APIs,
+    command-line pipelines, and interactive applications.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
-Suggests: 
+Imports:
+    methods,
+    lidR,
+    terra,
+    sf,
+    dplyr,
+    ggplot2,
+    leaflet,
+    rmapshaper,
+    nngeo,
+    Morpho,
+    htmlwidgets
+Suggests:
     knitr,
     rmarkdown,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
 VignetteBuilder: knitr
+Depends: 
+    R (>= 3.5)
+LazyData: true

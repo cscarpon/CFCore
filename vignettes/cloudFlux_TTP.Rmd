@@ -1,0 +1,77 @@
+---
+title: "CloudFlux workflow on TTP sample data"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{cloudFlux workflow on TTP sample data}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message = FALSE,
+  warning = FALSE
+)
+```
+# CloudFlux Core (CFCore) 
+Provides core, UI-agnostic utilities for processing and analyzing spatial
+raster data, vector geometries, and LiDAR point clouds. The package supports
+continuous change detection workflows (e.g., DTM and nDSM differencing),
+spatial masking and reprojection, raster alignment and resampling, point
+cloud denoising, and ICP-based alignment helpers. Designed as the computational
+backbone for the CloudFlux ecosystem, CFCore is suitable for use in APIs,
+command-line pipelines, and interactive applications.
+
+### Python dependency (ICP alignment)
+
+CloudFlux supports optional ICP alignment via Open3D.
+
+To enable this feature, in the terminal run the following line of code to  create the conda environment:
+
+conda env create -f inst/py/conda-env.yml
+
+
+```{r}
+library(CFCore)
+
+data("TTP_15", package = "CFCore")
+data("TTP_23", package = "CFCore")
+
+cc <- cloudFlux_new(
+  source_las = TTP_15,
+  target_las = TTP_23,
+  epsg = 26917,
+  resolution = 1
+)
+
+cc$run()
+```
+
+```{r}
+# Continuous summary stats
+cc$summary_stats()
+```
+
+```{r}
+# Optional binned interpretation
+breaks <- c(-10, -0.5, 0.5, 10)
+cc$summary_by_breaks(breaks)
+```
+
+```{r, fig.width=7, fig.height=6, fig.align="center"}
+# Plots
+p1 <- cc$plot_hist(which = "ndsm")
+p2 <- cc$plot_binned(breaks, which = "ndsm")
+
+print(p1)
+print(p2)
+```
+
+```{r, out.width="100%"}
+# Interactive map (HTML contexts)
+m <- cc$map()
+m$height <- 700
+m
+```

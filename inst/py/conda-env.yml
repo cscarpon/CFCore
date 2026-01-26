@@ -1,0 +1,9 @@
+name: icp_conda
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - open3d
+  - numpy
+  - laspy
+  - pyproj
