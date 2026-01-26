@@ -1,5 +1,5 @@
 ---
-title: CFCore
+CFCore
 ---
 
 <!-- badges: start -->
