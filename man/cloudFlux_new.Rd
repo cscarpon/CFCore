@@ -13,7 +13,7 @@ cloudFlux_new(
   resolution = 1,
   run = FALSE,
   icp_align = FALSE,
-  icp_py = "py/icp_open3D.py",
+  icp_py = "inst/py/icp_open3D.py",
   icp_condaenv = "icp_conda",
   voxel_size = 0.05,
   icp_method = "point-to-plane",

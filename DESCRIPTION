@@ -1,6 +1,6 @@
 Package: CFCore
 Title: Core Spatial and Point Cloud Utilities for CloudFlux
-Version: 0.0.0.9000
+Version: 0.0.1.0000
 Authors@R: 
     person(
       given = "Christopher",
@@ -39,5 +39,5 @@ Suggests:
 Config/testthat/edition: 3
 VignetteBuilder: knitr
 Depends: 
-    R (>= 3.5)
+    R (>= 4.1)
 LazyData: true
