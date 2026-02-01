@@ -119,8 +119,8 @@ process_raster <- function(source, target, source_mask, target_mask, method = "b
   target_mask <- sf::st_make_valid(target_mask)
 
   # Drop non-polygonal leftovers if any appear after repair
-  source_mask <- sf::st_collection_extract(source_mask, "POLYGON")
-  target_mask <- sf::st_collection_extract(target_mask, "POLYGON")
+  source_mask <- cfcore_as_polygon(source_mask)
+  target_mask <- cfcore_as_polygon(target_mask)
 
   # Union can still fail if there are tiny slivers; a zero-width buffer often fixes it
   union_sf <- tryCatch(

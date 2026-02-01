@@ -79,7 +79,7 @@ cloudFlux <- methods::setRefClass(
                           resolution = 1,
                           run = FALSE,
                           icp_align = FALSE,
-                          icp_py = "py/icp_open3D.py",
+                          icp_py = "inst/py/icp_open3D.py",
                           icp_condaenv = "icp_conda",
                           voxel_size = 0.05,
                           icp_method = "point-to-plane",
@@ -148,7 +148,12 @@ cloudFlux <- methods::setRefClass(
                        method = "bilinear",
                        k_sor1 = 5, m_sor1 = 3,
                        k_sor2 = 20, m_sor2 = 5) {
-      .self$run(resolution = resolution, method = method, k_sor1 = k_sor1, m_sor1 = m_sor1, k_sor2 = k_sor2, m_sor2 = m_sor2)
+      .self$run(
+        resolution = resolution, method = method,
+        k_sor1 = k_sor1, m_sor1 = m_sor1,
+        k_sor2 = k_sor2, m_sor2 = m_sor2
+      )
+      invisible(.self)
     },
 
     build_masks = function() {
@@ -164,8 +169,16 @@ cloudFlux <- methods::setRefClass(
 
     denoise = function(k_sor1 = 5, m_sor1 = 3, k_sor2 = 20, m_sor2 = 5) {
       t0 <- base::Sys.time()
-      .self$pc_source$LPC <- noise_filter(.self$pc_source$LPC, k_sor1 = k_sor1, m_sor1 = m_sor1, k_sor2 = k_sor2, m_sor2 = m_sor2)
-      .self$pc_target$LPC <- noise_filter(.self$pc_target$LPC, k_sor1 = k_sor1, m_sor1 = m_sor1, k_sor2 = k_sor2, m_sor2 = m_sor2)
+      .self$pc_source$LPC <- noise_filter(
+        .self$pc_source$LPC,
+        k_sor1 = k_sor1, m_sor1 = m_sor1,
+        k_sor2 = k_sor2, m_sor2 = m_sor2
+      )
+      .self$pc_target$LPC <- noise_filter(
+        .self$pc_target$LPC,
+        k_sor1 = k_sor1, m_sor1 = m_sor1,
+        k_sor2 = k_sor2, m_sor2 = m_sor2
+      )
       .self$timings$denoise <- base::Sys.time() - t0
       invisible(.self)
     },
@@ -180,15 +193,25 @@ cloudFlux <- methods::setRefClass(
       invisible(.self)
     },
 
-    icp_align_open3d = function(icp_py = "py/icp_open3D.py",
+    icp_align_open3d = function(icp_py = "inst/py/icp_open3D.py",
                                 icp_condaenv = "icp_conda",
                                 voxel_size = 0.05,
                                 icp_method = "point-to-plane") {
       if (!base::requireNamespace("reticulate", quietly = TRUE)) {
         stop("Package 'reticulate' is required for ICP alignment but is not installed.", call. = FALSE)
       }
+      if (!base::requireNamespace("lidR", quietly = TRUE)) {
+        stop("Package 'lidR' is required for ICP alignment but is not installed.", call. = FALSE)
+      }
+
       if (is.null(.self$pc_source$LPC) || is.null(.self$pc_target$LPC)) {
         stop("Both pc_source$LPC and pc_target$LPC must be set before ICP alignment.", call. = FALSE)
+      }
+
+      # Resolve icp_py robustly for installed package or dev workflows
+      if (!base::file.exists(icp_py)) {
+        icp_py2 <- base::system.file("py", "icp_open3D.py", package = "CFCore")
+        if (base::nzchar(icp_py2)) icp_py <- icp_py2
       }
       if (!base::file.exists(icp_py)) {
         stop("ICP python script not found at: ", icp_py, call. = FALSE)
@@ -209,15 +232,44 @@ cloudFlux <- methods::setRefClass(
         stop("Open3DICP was not loaded from the python script. Check icp_py exports.", call. = FALSE)
       }
 
-      icp_aligner <- Open3DICP(source_path, target_path, voxel_size = voxel_size, icp_method = icp_method)
-      aligned_file_path <- icp_aligner$align()
+      icp_aligner <- Open3DICP(
+        source_path, target_path,
+        voxel_size = voxel_size,
+        icp_method = icp_method
+      )
 
-      if (base::length(aligned_file_path) < 1L || !base::file.exists(aligned_file_path[[1]])) {
-        stop("ICP did not return a valid aligned file path.", call. = FALSE)
+      res <- icp_aligner$align()
+
+      # Python align() returns (aligned_path, message). Reticulate maps to list/tuple.
+      aligned_path <- NULL
+      msg <- NULL
+
+      if (base::is.list(res) && base::length(res) >= 1L) {
+        aligned_path <- res[[1]]
+        if (base::length(res) >= 2L) msg <- res[[2]]
+      } else {
+        aligned_path <- tryCatch(res[[1]], error = function(e) NULL)
+        msg <- tryCatch(res[[2]], error = function(e) NULL)
       }
 
-      .self$icp_aligned_path <- base::as.character(aligned_file_path[[1]])
+      if (is.null(aligned_path) || !base::nzchar(base::as.character(aligned_path))) {
+        stop("ICP did not return an aligned path. Message: ", base::as.character(msg), call. = FALSE)
+      }
 
+      aligned_path <- base::as.character(aligned_path)
+
+      if (!base::file.exists(aligned_path)) {
+        stop(
+          "ICP returned a path that does not exist: ", aligned_path,
+          "\nMessage: ", base::as.character(msg),
+          call. = FALSE
+        )
+      }
+
+      .self$icp_aligned_path <- aligned_path
+      .self$timings$icp_message <- base::as.character(msg)
+
+      # Replace target point cloud with aligned version
       .self$pc_target <- spatial_container$new(file_path = .self$icp_aligned_path)
       .self$pc_target$set_crs(.self$epsg)
 
@@ -363,7 +415,7 @@ cloudFlux_new <- function(source_path = character(0),
                           resolution = 1,
                           run = FALSE,
                           icp_align = FALSE,
-                          icp_py = "py/icp_open3D.py",
+                          icp_py = "inst/py/icp_open3D.py",
                           icp_condaenv = "icp_conda",
                           voxel_size = 0.05,
                           icp_method = "point-to-plane",
