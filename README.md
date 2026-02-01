@@ -117,7 +117,9 @@ cc <- cloudFlux_new(
   icp_align = TRUE,
   icp_condaenv = "icp_conda",
   voxel_size = 0.05,
-  icp_method = "point-to-plane"
+  icp_method = "point-to-plane",
+  icp_use_gpu = TRUE,   # optional (default TRUE)
+  icp_max_iter = 50     # optional (default 50)
 )
 
 cc$run()

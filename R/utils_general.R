@@ -172,3 +172,20 @@ delete_all_files <- function(dir, pattern = NULL, recursive = FALSE, dry_run = F
   ok <- base::file.remove(files)
   files[ok]
 }
+
+cfcore_as_polygon <- function(x) {
+  # x can be sf or sfc
+  g <- if (inherits(x, "sf")) sf::st_geometry(x) else x
+  gt <- unique(as.character(sf::st_geometry_type(g)))
+
+  # Only extract polygons if it is actually a collection type
+  if (any(gt %in% c("GEOMETRYCOLLECTION", "MULTIPOLYGON"))) {
+    if (inherits(x, "sf")) {
+      sf::st_geometry(x) <- sf::st_collection_extract(sf::st_geometry(x), "POLYGON")
+      return(x)
+    }
+    return(sf::st_collection_extract(g, "POLYGON"))
+  }
+
+  x
+}
