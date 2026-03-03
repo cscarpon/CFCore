@@ -77,7 +77,7 @@ cc <- cloudFlux_new(
   target_las = TTP_23,
   epsg       = 26917,
   use_icp    = TRUE,
-  use_gpu    = TRUE,
+  use_gpu    = FALSE,
   voxel_size = 0.5,
   icp_method = "point-to-plane"
 )
