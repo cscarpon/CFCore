@@ -131,12 +131,22 @@ cloudFlux <- methods::setRefClass(
 
     denoise = function(k_sor1 = 5, m_sor1 = 3, k_sor2 = 20, m_sor2 = 5) {
       t0 <- base::Sys.time()
+
+      # 1. Run the existing CFCore noise_filter on Source
+      # This function internally drops the points where Class != 18
       .self$pc_source$LPC <- noise_filter(
-        .self$pc_source$LPC, k_sor1 = k_sor1, m_sor1 = m_sor1, k_sor2 = k_sor2, m_sor2 = m_sor2
+        .self$pc_source$LPC,
+        k_sor1 = k_sor1, m_sor1 = m_sor1,
+        k_sor2 = k_sor2, m_sor2 = m_sor2
       )
+
+      # 2. Run it on Target
       .self$pc_target$LPC <- noise_filter(
-        .self$pc_target$LPC, k_sor1 = k_sor1, m_sor1 = m_sor1, k_sor2 = k_sor2, m_sor2 = m_sor2
+        .self$pc_target$LPC,
+        k_sor1 = k_sor1, m_sor1 = m_sor1,
+        k_sor2 = k_sor2, m_sor2 = m_sor2
       )
+
       .self$timings$denoise <- base::Sys.time() - t0
       invisible(.self)
     },
