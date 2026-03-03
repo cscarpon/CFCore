@@ -3,6 +3,7 @@
 export(cloudFlux_new)
 export(spatial_container_new)
 import(methods)
+import(reticulate)
 importClassesFrom(lidR,LAS)
 importClassesFrom(terra,SpatRaster)
 importClassesFrom(terra,SpatVector)

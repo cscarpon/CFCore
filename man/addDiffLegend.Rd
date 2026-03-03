@@ -11,26 +11,8 @@ addDiffLegend(
   layerId,
   palette = NULL,
   diff_range = NULL,
-  diff_quantiles = c(0.02, 0.98)
+  diff_quantiles = c(0, 1)
 )
-}
-\arguments{
-\item{map}{Leaflet map.}
-
-\item{diff_raster}{\code{terra::SpatRaster} continuous difference raster.}
-
-\item{title}{Legend title.}
-
-\item{layerId}{Leaflet layer ID.}
-
-\item{palette}{Palette name or vector accepted by \code{leaflet::colorNumeric()}.}
-
-\item{diff_range}{Optional numeric length-2 c(min, max) for domain.}
-
-\item{diff_quantiles}{Quantiles used for domain if \code{diff_range} is NULL.}
-}
-\value{
-Leaflet map.
 }
 \description{
 Add a continuous legend for a difference raster (with controlled domain)

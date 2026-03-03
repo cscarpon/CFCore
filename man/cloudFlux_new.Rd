@@ -11,45 +11,36 @@ cloudFlux_new(
   target_las = NULL,
   epsg = 26917,
   resolution = 1,
-  run = FALSE,
-  icp_align = FALSE,
-  icp_py = "inst/py/icp_open3D.py",
-  icp_condaenv = "icp_conda",
+  use_icp = FALSE,
+  use_gpu = TRUE,
   voxel_size = 0.05,
-  icp_method = "point-to-plane",
-  method = "bilinear",
-  k_sor1 = 5,
-  m_sor1 = 3,
-  k_sor2 = 20,
-  m_sor2 = 5
+  icp_method = "point-to-plane"
 )
 }
 \arguments{
-\item{source_path, target_path}{Character paths to LAS/LAZ inputs (optional if LAS provided).}
+\item{source_path}{Character path to the source LAS/LAZ file.}
 
-\item{source_las, target_las}{\code{lidR::LAS} objects (optional if paths provided).}
+\item{target_path}{Character path to the target LAS/LAZ file.}
 
-\item{epsg}{Integer EPSG used for the workflow (e.g., 26917).}
+\item{source_las}{\code{lidR::LAS} object for the source epoch.}
 
-\item{resolution}{Numeric raster resolution used for DTM/nDSM.}
+\item{target_las}{\code{lidR::LAS} object for the target epoch.}
 
-\item{run}{Logical; if TRUE runs the full workflow after initialization.}
+\item{epsg}{Integer EPSG code for the working projection (default: 26917).}
 
-\item{icp_align}{Logical; if TRUE runs Open3D ICP (aligns target to source) before raster steps.}
+\item{resolution}{Numeric raster resolution for DTM/nDSM (default: 1).}
 
-\item{icp_py}{Path to the Open3D ICP python script.}
+\item{use_icp}{Logical; if TRUE, runs ICP alignment automatically (default: FALSE).}
 
-\item{icp_condaenv}{Conda environment name for reticulate to use.}
+\item{use_gpu}{Logical; if TRUE, attempts GPU acceleration for ICP (default: TRUE).}
 
-\item{voxel_size, icp_method}{ICP parameters passed into the python class.}
+\item{voxel_size}{Numeric voxel size for ICP downsampling (default: 0.05).}
 
-\item{method}{Resampling method for \code{process_raster()} (default "bilinear").}
-
-\item{k_sor1, m_sor1, k_sor2, m_sor2}{SOR noise filter parameters.}
+\item{icp_method}{Character; ICP method, e.g., "point-to-plane" (default).}
 }
 \value{
-A cloudFlux reference-class object.
+A \code{cloudFlux} reference class object.
 }
 \description{
-Convenience constructor for the cloudFlux reference class.
+Convenience constructor for the cloudFlux reference class workflow.
 }

@@ -73,7 +73,7 @@ cfcore_values_non_na <- function(raster) {
   v[!base::is.na(v)]
 }
 
-cfcore_diff_domain <- function(diff_raster, diff_range = NULL, diff_quantiles = c(0.02, 0.98)) {
+cfcore_diff_domain <- function(diff_raster, diff_range = NULL, diff_quantiles = c(0, 1)) {
   v <- cfcore_values_non_na(diff_raster)
   if (base::length(v) == 0L) return(NULL)
 
@@ -95,32 +95,12 @@ cfcore_diff_domain <- function(diff_raster, diff_range = NULL, diff_quantiles = 
 
 #' Display a leaflet map with rasters and optional continuous change layers
 #'
-#' Builds a leaflet map containing DTM and nDSM rasters for two epochs, optional
-#' continuous difference rasters (`later - earlier`), and an optional AOI mask.
-#'
-#' @param dtm1,ndsm1,dtm2,ndsm2 `terra::SpatRaster` layers (may be `NULL`).
-#' @param dtm_diff,ndsm_diff Optional continuous difference rasters (may be `NULL`).
-#' @param area_mask Optional AOI mask. Prefer `terra::SpatVector` or `sf`.
-#' @param epsg EPSG integer for web display. Defaults to 4326.
-#' @param diff_palette Palette name or vector accepted by `leaflet::colorNumeric()`.
-#'   If `NULL`, uses `"viridis"`.
-#' @param diff_range Optional numeric length-2 c(min, max) for diff legend/rendering.
-#'   If `NULL`, `diff_quantiles` are used.
-#' @param diff_quantiles Numeric length-2 quantiles used to set diff rendering domain
-#'   when `diff_range` is `NULL`. Defaults to c(0.02, 0.98) to reduce outlier impact.
-#' @param diff_breaks Optional numeric vector of breakpoints for an additional binned
-#'   legend (labels only). Does not alter raster rendering.
-#' @param diff_break_colors Optional colors for the binned legend (length = bins).
-#'   If `NULL`, a default qualitative palette is generated.
-#' @param measure_colors Length-2 character vector for measure tool colors:
-#'   `c(activeColor, completedColor)`.
-#' @return A `leaflet` map widget.
 #' @keywords internal
 displayMap <- function(dtm1, ndsm1, dtm2, ndsm2, dtm_diff, ndsm_diff, area_mask,
                        epsg = 4326,
                        diff_palette = NULL,
                        diff_range = NULL,
-                       diff_quantiles = c(0.02, 0.98),
+                       diff_quantiles = c(0, 1), # Updated default to fix map holes
                        diff_breaks = NULL,
                        diff_break_colors = NULL,
                        measure_colors = c("#3D535D", "#7D4479")) {
@@ -203,13 +183,12 @@ displayMap <- function(dtm1, ndsm1, dtm2, ndsm2, dtm_diff, ndsm_diff, area_mask,
   }
   if ("Mask" %in% overlayGroups) m <- leaflet::showGroup(m, "Mask")
 
-  # Legends: create all, then JS will manage visibility.
+  # Legends
   if (!is.null(dtm1_m))  m <- addLegendLayer(m, dtm1_m,  "DTM (Source)",  "dtm1Legend",  "magma")
   if (!is.null(dtm2_m))  m <- addLegendLayer(m, dtm2_m,  "DTM (Target)",  "dtm2Legend",  "magma")
   if (!is.null(ndsm1_m)) m <- addLegendLayer(m, ndsm1_m, "nDSM (Source)", "ndsm1Legend", "magma")
   if (!is.null(ndsm2_m)) m <- addLegendLayer(m, ndsm2_m, "nDSM (Target)", "ndsm2Legend", "magma")
 
-  # IMPORTANT: do NOT pass `group=` to addDiffLegend() unless its signature supports it.
   if (!is.null(ndsm_diff_m)) {
     m <- addDiffLegend(
       m, ndsm_diff_m,
@@ -243,10 +222,11 @@ displayMap <- function(dtm1, ndsm1, dtm2, ndsm2, dtm_diff, ndsm_diff, area_mask,
       stop("`diff_break_colors` length must match number of bins: ", k, call. = FALSE)
     }
 
+    # REVERSED BINNED LEGEND HERE
     m <- leaflet::addLegend(
       m,
-      colors = colors,
-      labels = labels,
+      colors = rev(colors),
+      labels = rev(labels),
       position = "bottomleft",
       title = "Interpretation bins",
       layerId = "diffBinsLegend",
@@ -254,8 +234,7 @@ displayMap <- function(dtm1, ndsm1, dtm2, ndsm2, dtm_diff, ndsm_diff, area_mask,
     )
   }
 
-  # JS: assign stable DOM ids to legend controls by matching title text, then toggle.
-  # NOTE: JS normalizes whitespace, so "\n" becomes a space for matching.
+  # JS code block remains identical
   legend_titles_to_ids <- list(
     "DTM (Source)" = "dtm1Legend",
     "DTM (Target)" = "dtm2Legend",
@@ -383,30 +362,18 @@ displayMap <- function(dtm1, ndsm1, dtm2, ndsm2, dtm_diff, ndsm_diff, area_mask,
 
 #' Project and optionally mask a raster for web display
 #'
-#' @param raster `terra::SpatRaster` or `NULL`.
-#' @param mask Optional AOI mask (`terra::SpatVector` or `sf`), projected to display CRS.
-#' @param epsg EPSG integer for display CRS (defaults to 4326).
-#' @return Projected (and masked) `terra::SpatRaster`, or `NULL`.
 #' @keywords internal
 processRasterMask <- function(raster, mask, epsg = 4326) {
   if (is.null(raster)) return(NULL)
-
   raster_m <- terra::project(raster, cfcore_epsg_string(epsg))
-
   if (!is.null(mask)) {
     raster_m <- terra::mask(raster_m, cfcore_mask_to_vect(mask, epsg = epsg))
   }
-
   raster_m
 }
 
 #' Add a continuous raster layer to a leaflet map
 #'
-#' @param map Leaflet map.
-#' @param raster `terra::SpatRaster` or `NULL`.
-#' @param name Group name for leaflet layer control.
-#' @param color_palette Palette name or vector accepted by `leaflet::colorNumeric()`.
-#' @return Leaflet map.
 #' @keywords internal
 addRasterLayer <- function(map, raster, name, color_palette) {
   if (is.null(raster)) return(map)
@@ -415,18 +382,52 @@ addRasterLayer <- function(map, raster, name, color_palette) {
   if (base::length(vals) == 0L) return(map)
 
   pal <- leaflet::colorNumeric(color_palette, domain = vals, na.color = "transparent")
-
   leaflet::addRasterImage(map, raster, colors = pal, group = name, maxBytes = Inf, opacity = 1)
 }
 
 #' Add a legend for a continuous raster layer
 #'
-#' @param map Leaflet map.
-#' @param raster `terra::SpatRaster` or `NULL`.
-#' @param title Legend title.
-#' @param layerId Leaflet layer ID.
-#' @param color_palette Palette name or vector accepted by `leaflet::colorNumeric()`.
-#' @return Leaflet map.
+#' @keywords internal
+addLegendLayer <- function(map, raster, title, layerId, color_palette) {
+  if (is.null(raster)) return(map)
+
+  vals <- cfcore_values_non_na(raster)
+  if (base::length(vals) == 0L) return(map)
+
+  pal <- leaflet::colorNumeric(color_palette, domain = vals, na.color = "transparent")
+
+  # REVERSED CONTINUOUS LEGEND HERE
+  leaflet::addLegend(
+    map,
+    pal = pal,
+    values = vals,
+    position = "bottomright",
+    title = title,
+    layerId = layerId,
+    opacity = 1,
+    reverse = TRUE
+  )
+}
+
+#' Add a continuous difference raster layer (with controlled domain)
+#'
+#' @keywords internal
+addDiffRasterLayer <- function(map, diff_raster, group,
+                               palette = NULL,
+                               diff_range = NULL,
+                               diff_quantiles = c(0, 1)) {
+  if (is.null(diff_raster)) return(map)
+  if (is.null(palette)) palette <- "viridis"
+
+  domain <- cfcore_diff_domain(diff_raster, diff_range = diff_range, diff_quantiles = diff_quantiles)
+  if (is.null(domain)) return(map)
+
+  pal <- leaflet::colorNumeric(palette = palette, domain = domain, na.color = "transparent")
+  leaflet::addRasterImage(map, diff_raster, colors = pal, group = group, maxBytes = Inf, opacity = 1)
+}
+
+#' Add a legend for a continuous raster layer
+#'
 #' @keywords internal
 addLegendLayer <- function(map, raster, title, layerId, color_palette) {
   if (is.null(raster)) return(map)
@@ -443,54 +444,19 @@ addLegendLayer <- function(map, raster, title, layerId, color_palette) {
     position = "bottomright",
     title = title,
     layerId = layerId,
-    opacity = 1
+    opacity = 1,
+    # FIX: Use transform to physically flip the legend drawing order
+    labFormat = leaflet::labelFormat(transform = function(x) base::sort(x, decreasing = TRUE))
   )
-}
-
-#' Add a continuous difference raster layer (with controlled domain)
-#'
-#' Uses `diff_range` if provided; otherwise uses quantiles to set the color scale
-#' domain to reduce outlier impact.
-#'
-#' @param map Leaflet map.
-#' @param diff_raster `terra::SpatRaster` continuous difference raster.
-#' @param group Leaflet layer group name.
-#' @param palette Palette name or vector accepted by `leaflet::colorNumeric()`.
-#' @param diff_range Optional numeric length-2 c(min, max) for domain.
-#' @param diff_quantiles Quantiles used for domain if `diff_range` is NULL.
-#' @return Leaflet map.
-#' @keywords internal
-addDiffRasterLayer <- function(map, diff_raster, group,
-                               palette = NULL,
-                               diff_range = NULL,
-                               diff_quantiles = c(0.02, 0.98)) {
-  if (is.null(diff_raster)) return(map)
-
-  if (is.null(palette)) palette <- "viridis"
-
-  domain <- cfcore_diff_domain(diff_raster, diff_range = diff_range, diff_quantiles = diff_quantiles)
-  if (is.null(domain)) return(map)
-
-  pal <- leaflet::colorNumeric(palette = palette, domain = domain, na.color = "transparent")
-
-  leaflet::addRasterImage(map, diff_raster, colors = pal, group = group, maxBytes = Inf, opacity = 1)
 }
 
 #' Add a continuous legend for a difference raster (with controlled domain)
 #'
-#' @param map Leaflet map.
-#' @param diff_raster `terra::SpatRaster` continuous difference raster.
-#' @param title Legend title.
-#' @param layerId Leaflet layer ID.
-#' @param palette Palette name or vector accepted by `leaflet::colorNumeric()`.
-#' @param diff_range Optional numeric length-2 c(min, max) for domain.
-#' @param diff_quantiles Quantiles used for domain if `diff_range` is NULL.
-#' @return Leaflet map.
 #' @keywords internal
 addDiffLegend <- function(map, diff_raster, title, layerId,
                           palette = NULL,
                           diff_range = NULL,
-                          diff_quantiles = c(0.02, 0.98)) {
+                          diff_quantiles = c(0, 1)) {
   if (is.null(diff_raster)) return(map)
   if (is.null(palette)) palette <- "viridis"
 
@@ -506,17 +472,14 @@ addDiffLegend <- function(map, diff_raster, title, layerId,
     position = "bottomright",
     title = title,
     layerId = layerId,
-    opacity = 1
+    opacity = 1,
+    # FIX: Use transform to physically flip the legend drawing order
+    labFormat = leaflet::labelFormat(transform = function(x) base::sort(x, decreasing = TRUE))
   )
 }
 
-
 #' Display index polygons for loaded spatial containers
 #'
-#' @param index `sf::sfc` or `sf` geometry representing an extent polygon.
-#' @param epsg EPSG integer for display CRS (defaults to 4326).
-#' @param measure_colors Length-2 character vector for measure tool colors.
-#' @return A `leaflet` map widget.
 #' @keywords internal
 displayIndex <- function(index, epsg = 4326, measure_colors = c("#3D535D", "#7D4479")) {
   m <- leaflet::leaflet() |>

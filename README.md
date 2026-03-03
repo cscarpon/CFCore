@@ -67,31 +67,40 @@ conda activate icp_conda
 ```r
 library(CFCore)
 
+# Load example datasets (Tommy Thompson Park 2015 & 2023)
 data("TTP_15", package = "CFCore")
 data("TTP_23", package = "CFCore")
 
+# Initialize the CloudFlux workflow
 cc <- cloudFlux_new(
   source_las = TTP_15,
   target_las = TTP_23,
   epsg = 26917,
-  resolution = 1
+  resolution = 1,
+  use_icp = TRUE,     # Automatically run Open3D ICP alignment during execution
+  use_gpu = TRUE      # Toggle CUDA GPU acceleration (falls back to CPU if unavailable)
 )
 
+# Execute the full workflow (Alignment -> Masking -> Rasterization -> Differencing)
 cc$run()
 
 # Continuous summary statistics
 cc$summary_stats()
 
-# Optional binned interpretation
+# Optional binned interpretation (e.g., minimal change, moderate growth/loss, large changes)
 breaks <- c(-10, -0.5, 0.5, 10)
 cc$summary_by_breaks(breaks)
 
-# Plots
-cc$plot_hist(which = "ndsm")
-cc$plot_binned(breaks, which = "ndsm")
+# Visualizations
+cc$plot_hist(which = "ndsm", title = "Canopy Height Change Distribution")
+cc$plot_binned(breaks, which = "ndsm", title = "Binned Canopy Change")
 
-# Interactive map (HTML contexts)
+# Interactive Leaflet map (Great for RStudio viewer or HTML Markdown)
 m <- cc$map(diff_breaks = breaks)
+m 
+
+# Export the generated DTMs, nDSMs, and difference rasters to a local directory
+cc$save_rasters(out_dir = "cfcore_outputs", prefix = "ttp")
 ```
 
 ```r

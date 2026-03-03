@@ -30,8 +30,9 @@ Imports:
     leaflet,
     rmapshaper,
     nngeo,
-    Morpho,
-    htmlwidgets
+    htmlwidgets,
+    reticulate,
+    Morpho
 Suggests:
     knitr,
     rmarkdown,

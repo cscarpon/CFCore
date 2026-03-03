@@ -10,27 +10,10 @@ addDiffRasterLayer(
   group,
   palette = NULL,
   diff_range = NULL,
-  diff_quantiles = c(0.02, 0.98)
+  diff_quantiles = c(0, 1)
 )
 }
-\arguments{
-\item{map}{Leaflet map.}
-
-\item{diff_raster}{\code{terra::SpatRaster} continuous difference raster.}
-
-\item{group}{Leaflet layer group name.}
-
-\item{palette}{Palette name or vector accepted by \code{leaflet::colorNumeric()}.}
-
-\item{diff_range}{Optional numeric length-2 c(min, max) for domain.}
-
-\item{diff_quantiles}{Quantiles used for domain if \code{diff_range} is NULL.}
-}
-\value{
-Leaflet map.
-}
 \description{
-Uses \code{diff_range} if provided; otherwise uses quantiles to set the color scale
-domain to reduce outlier impact.
+Add a continuous difference raster layer (with controlled domain)
 }
 \keyword{internal}

@@ -4,43 +4,6 @@
 #' processing in CFCore: mask generation, denoising, DTM/nDSM derivation, raster
 #' alignment, and continuous difference computation.
 #'
-#' This class is designed to reduce boilerplate for common two-epoch workflows.
-#' For API-style usage, you can still call the underlying standalone functions
-#' directly (`mask_pc()`, `noise_filter()`, `process_raster()`, `diff_ndsm()`, etc.).
-#'
-#' @section Fields:
-#' \describe{
-#'   \item{epsg}{`integer`. Working EPSG used for point clouds and masks.}
-#'   \item{resolution}{`numeric`. Raster resolution used for DTM/nDSM.}
-#'   \item{pc_source}{`spatial_container`. Source (earlier) epoch container.}
-#'   \item{pc_target}{`spatial_container`. Target (later) epoch container.}
-#'   \item{mask_union}{`terra::SpatVector`. Union mask used for raster masking/alignment.}
-#'   \item{aligned_ndsm}{`list`. Output of `process_raster()` for nDSM rasters.}
-#'   \item{aligned_dtm}{`list`. Output of `process_raster()` for DTM rasters.}
-#'   \item{ndsm_diff}{`terra::SpatRaster`. Continuous nDSM difference (target - source).}
-#'   \item{dtm_diff}{`terra::SpatRaster`. Continuous DTM difference (target - source).}
-#'   \item{timings}{`list`. Named timings captured during processing (optional).}
-#'   \item{icp_aligned_path}{`character`. Path to ICP-aligned output (if used).}
-#' }
-#'
-#' @section Methods:
-#' \describe{
-#'   \item{initialize(...)}{Optionally loads LAS/LAZ, sets CRS, and can run the workflow.}
-#'   \item{run(...)}{Runs: masks, denoise, DTM, nDSM, align rasters, compute diffs.}
-#'   \item{run_all(...)}{Alias for `run()` (kept for compatibility).}
-#'   \item{build_masks()}{Computes 2D masks using `mask_pc()`.}
-#'   \item{denoise()}{Runs `noise_filter()` on both epochs.}
-#'   \item{build_rasters(resolution = self$resolution)}{Calls `to_dtm()` and `to_ndsm()` on both epochs.}
-#'   \item{icp_align_open3d(...)}{Optional Open3D ICP alignment via reticulate (aligns target to source).}
-#'   \item{align_rasters(method = "bilinear")}{Aligns DTM and nDSM rasters using `process_raster()`.}
-#'   \item{compute_diffs()}{Computes continuous differences and masks them to the union mask.}
-#'   \item{summary_stats()}{Returns `list(ndsm=..., dtm=...)` from `diff_summary_stats()`.}
-#'   \item{summary_by_breaks(breaks, unit = "m")}{Returns binned summaries via `diff_summary_by_breaks()`.}
-#'   \item{plot_hist(which = "ndsm", bins = 60, title = NULL)}{Histogram plot for a diff raster.}
-#'   \item{plot_binned(breaks, which = "ndsm", title = NULL)}{Binned bar plot for a diff raster.}
-#'   \item{map(...)}{Leaflet map via `displayMap()` using stored rasters/diffs.}
-#' }
-#'
 #' @name cloudFlux
 #' @docType class
 #' @aliases cloudFlux-class
@@ -67,7 +30,11 @@ cloudFlux <- methods::setRefClass(
     ndsm_diff = "ANY",
     dtm_diff = "ANY",
     timings = "list",
-    icp_aligned_path = "character"
+    icp_aligned_path = "character",
+    use_icp = "logical",
+    use_gpu = "logical",
+    voxel_size = "numeric",
+    icp_method = "character"
   ),
   methods = list(
 
@@ -77,20 +44,20 @@ cloudFlux <- methods::setRefClass(
                           target_las = NULL,
                           epsg = 26917,
                           resolution = 1,
-                          run = FALSE,
-                          icp_align = FALSE,
-                          icp_py = "inst/py/icp_open3D.py",
-                          icp_condaenv = "icp_conda",
+                          use_icp = FALSE,
+                          use_gpu = TRUE,
                           voxel_size = 0.05,
-                          icp_method = "point-to-plane",
-                          method = "bilinear",
-                          k_sor1 = 5, m_sor1 = 3,
-                          k_sor2 = 20, m_sor2 = 5) {
+                          icp_method = "point-to-plane") {
 
       .self$epsg <- base::as.integer(epsg)
       .self$resolution <- resolution
       .self$timings <- list()
       .self$icp_aligned_path <- character(0)
+
+      .self$use_icp <- use_icp
+      .self$use_gpu <- use_gpu
+      .self$voxel_size <- voxel_size
+      .self$icp_method <- icp_method
 
       .self$pc_source <- spatial_container$new()
       .self$pc_target <- spatial_container$new()
@@ -107,27 +74,6 @@ cloudFlux <- methods::setRefClass(
         .self$pc_target <- spatial_container$new(file_path = target_path)
       }
 
-      if (!is.null(.self$pc_source$LPC)) .self$pc_source$set_crs(.self$epsg)
-      if (!is.null(.self$pc_target$LPC)) .self$pc_target$set_crs(.self$epsg)
-
-      if (isTRUE(icp_align)) {
-        .self$icp_align_open3d(
-          icp_py = icp_py,
-          icp_condaenv = icp_condaenv,
-          voxel_size = voxel_size,
-          icp_method = icp_method
-        )
-      }
-
-      if (isTRUE(run)) {
-        .self$run(
-          resolution = resolution,
-          method = method,
-          k_sor1 = k_sor1, m_sor1 = m_sor1,
-          k_sor2 = k_sor2, m_sor2 = m_sor2
-        )
-      }
-
       invisible(.self)
     },
 
@@ -135,25 +81,41 @@ cloudFlux <- methods::setRefClass(
                    method = "bilinear",
                    k_sor1 = 5, m_sor1 = 3,
                    k_sor2 = 20, m_sor2 = 5) {
+
+      message("Setting coordinate reference systems...")
+      if (!is.null(.self$pc_source$LPC)) .self$pc_source$set_crs(.self$epsg)
+      if (!is.null(.self$pc_target$LPC)) .self$pc_target$set_crs(.self$epsg)
+
+      if (isTRUE(.self$use_icp)) {
+        message(sprintf("Running ICP Alignment (GPU requested: %s)...", .self$use_gpu))
+        .self$icp_align_open3d(
+          voxel_size = .self$voxel_size,
+          icp_method = .self$icp_method,
+          use_gpu = .self$use_gpu
+        )
+      }
+
+      message("Building masks...")
       .self$build_masks()
+
+      message("Applying noise filters...")
       .self$denoise(k_sor1 = k_sor1, m_sor1 = m_sor1, k_sor2 = k_sor2, m_sor2 = m_sor2)
+
+      message("Generating DTM and nDSM rasters...")
       .self$build_rasters(resolution = resolution)
+
+      message("Aligning rasters...")
       .self$align_rasters(method = method)
+
+      message("Computing continuous differences...")
       .self$compute_diffs()
+
+      message("Workflow complete.")
       invisible(.self)
     },
 
-    # compatibility alias
-    run_all = function(resolution = .self$resolution,
-                       method = "bilinear",
-                       k_sor1 = 5, m_sor1 = 3,
-                       k_sor2 = 20, m_sor2 = 5) {
-      .self$run(
-        resolution = resolution, method = method,
-        k_sor1 = k_sor1, m_sor1 = m_sor1,
-        k_sor2 = k_sor2, m_sor2 = m_sor2
-      )
-      invisible(.self)
+    run_all = function(...) {
+      .self$run(...)
     },
 
     build_masks = function() {
@@ -170,14 +132,10 @@ cloudFlux <- methods::setRefClass(
     denoise = function(k_sor1 = 5, m_sor1 = 3, k_sor2 = 20, m_sor2 = 5) {
       t0 <- base::Sys.time()
       .self$pc_source$LPC <- noise_filter(
-        .self$pc_source$LPC,
-        k_sor1 = k_sor1, m_sor1 = m_sor1,
-        k_sor2 = k_sor2, m_sor2 = m_sor2
+        .self$pc_source$LPC, k_sor1 = k_sor1, m_sor1 = m_sor1, k_sor2 = k_sor2, m_sor2 = m_sor2
       )
       .self$pc_target$LPC <- noise_filter(
-        .self$pc_target$LPC,
-        k_sor1 = k_sor1, m_sor1 = m_sor1,
-        k_sor2 = k_sor2, m_sor2 = m_sor2
+        .self$pc_target$LPC, k_sor1 = k_sor1, m_sor1 = m_sor1, k_sor2 = k_sor2, m_sor2 = m_sor2
       )
       .self$timings$denoise <- base::Sys.time() - t0
       invisible(.self)
@@ -193,31 +151,22 @@ cloudFlux <- methods::setRefClass(
       invisible(.self)
     },
 
-    icp_align_open3d = function(icp_py = "inst/py/icp_open3D.py",
+    icp_align_open3d = function(icp_py = "inst/py/icp_hybrid.py", # Make sure this matches your script name!
                                 icp_condaenv = "icp_conda",
                                 voxel_size = 0.05,
-                                icp_method = "point-to-plane") {
-      if (!base::requireNamespace("reticulate", quietly = TRUE)) {
-        stop("Package 'reticulate' is required for ICP alignment but is not installed.", call. = FALSE)
-      }
-      if (!base::requireNamespace("lidR", quietly = TRUE)) {
-        stop("Package 'lidR' is required for ICP alignment but is not installed.", call. = FALSE)
-      }
+                                icp_method = "point-to-plane",
+                                use_gpu = TRUE) {
+      if (!base::requireNamespace("reticulate", quietly = TRUE)) stop("Install 'reticulate'.")
+      if (!base::requireNamespace("lidR", quietly = TRUE)) stop("Install 'lidR'.")
+      if (is.null(.self$pc_source$LPC) || is.null(.self$pc_target$LPC)) stop("Clouds must be set.")
 
-      if (is.null(.self$pc_source$LPC) || is.null(.self$pc_target$LPC)) {
-        stop("Both pc_source$LPC and pc_target$LPC must be set before ICP alignment.", call. = FALSE)
-      }
-
-      # Resolve icp_py robustly for installed package or dev workflows
       if (!base::file.exists(icp_py)) {
-        icp_py2 <- base::system.file("py", "icp_open3D.py", package = "CFCore")
+        icp_py2 <- base::system.file("py", "icp_hybrid.py", package = "CFCore")
         if (base::nzchar(icp_py2)) icp_py <- icp_py2
       }
-      if (!base::file.exists(icp_py)) {
-        stop("ICP python script not found at: ", icp_py, call. = FALSE)
-      }
+      if (!base::file.exists(icp_py)) stop("ICP python script not found: ", icp_py)
 
-      t0 <- base::Sys.time()
+      t0 <- base::Sys.time() # START TIMER
 
       source_path <- base::file.path(base::tempdir(), "cfcore_icp_source.laz")
       target_path <- base::file.path(base::tempdir(), "cfcore_icp_target.laz")
@@ -228,52 +177,34 @@ cloudFlux <- methods::setRefClass(
       reticulate::use_condaenv(icp_condaenv, required = TRUE)
       reticulate::source_python(icp_py)
 
-      if (!base::exists("Open3DICP")) {
-        stop("Open3DICP was not loaded from the python script. Check icp_py exports.", call. = FALSE)
-      }
-
-      icp_aligner <- Open3DICP(
+      icp_aligner <- HybridICP(
         source_path, target_path,
         voxel_size = voxel_size,
-        icp_method = icp_method
+        icp_method = icp_method,
+        use_gpu = use_gpu
       )
 
       res <- icp_aligner$align()
 
-      # Python align() returns (aligned_path, message). Reticulate maps to list/tuple.
-      aligned_path <- NULL
-      msg <- NULL
-
-      if (base::is.list(res) && base::length(res) >= 1L) {
-        aligned_path <- res[[1]]
-        if (base::length(res) >= 2L) msg <- res[[2]]
-      } else {
-        aligned_path <- tryCatch(res[[1]], error = function(e) NULL)
-        msg <- tryCatch(res[[2]], error = function(e) NULL)
-      }
+      aligned_path <- tryCatch(res[[1]], error = function(e) NULL)
+      msg <- tryCatch(res[[2]], error = function(e) NULL)
 
       if (is.null(aligned_path) || !base::nzchar(base::as.character(aligned_path))) {
-        stop("ICP did not return an aligned path. Message: ", base::as.character(msg), call. = FALSE)
+        stop("ICP failed to return path. Msg: ", base::as.character(msg), call. = FALSE)
       }
 
-      aligned_path <- base::as.character(aligned_path)
-
-      if (!base::file.exists(aligned_path)) {
-        stop(
-          "ICP returned a path that does not exist: ", aligned_path,
-          "\nMessage: ", base::as.character(msg),
-          call. = FALSE
-        )
-      }
-
-      .self$icp_aligned_path <- aligned_path
+      .self$icp_aligned_path <- base::as.character(aligned_path)
       .self$timings$icp_message <- base::as.character(msg)
 
-      # Replace target point cloud with aligned version
       .self$pc_target <- spatial_container$new(file_path = .self$icp_aligned_path)
       .self$pc_target$set_crs(.self$epsg)
 
-      .self$timings$icp_open3d <- base::Sys.time() - t0
+      # STOP TIMER AND PRINT
+      t_end <- base::Sys.time()
+      duration <- base::round(base::difftime(t_end, t0, units = "secs"), 2)
+      message(sprintf("ICP Alignment completed in %s seconds.", duration))
+
+      .self$timings$icp_total <- duration
       invisible(.self)
     },
 
@@ -307,11 +238,14 @@ cloudFlux <- methods::setRefClass(
     compute_diffs = function() {
       t0 <- base::Sys.time()
       if (base::length(.self$aligned_ndsm) == 0L || base::length(.self$aligned_dtm) == 0L) {
-        stop("Rasters must be aligned before computing diffs. Run align_rasters() first.", call. = FALSE)
+        stop("Rasters must be aligned before computing diffs.", call. = FALSE)
       }
 
-      .self$ndsm_diff <- diff_ndsm(.self$aligned_ndsm$source, .self$aligned_ndsm$target)
-      .self$dtm_diff  <- diff_dtm(.self$aligned_dtm$source,  .self$aligned_dtm$target)
+      src_ndsm_fixed <- terra::subst(.self$aligned_ndsm$source, NA, 0)
+      tgt_ndsm_fixed <- terra::subst(.self$aligned_ndsm$target, NA, 0)
+
+      .self$ndsm_diff <- diff_ndsm(src_ndsm_fixed, tgt_ndsm_fixed)
+      .self$dtm_diff  <- diff_dtm(.self$aligned_dtm$source, .self$aligned_dtm$target)
 
       if (!is.null(.self$mask_union)) {
         .self$ndsm_diff <- terra::mask(.self$ndsm_diff, .self$mask_union)
@@ -323,9 +257,6 @@ cloudFlux <- methods::setRefClass(
     },
 
     summary_stats = function() {
-      if (is.null(.self$ndsm_diff) || is.null(.self$dtm_diff)) {
-        stop("Diff rasters are not available. Run `run()` first.", call. = FALSE)
-      }
       list(
         ndsm = diff_summary_stats(.self$ndsm_diff),
         dtm  = diff_summary_stats(.self$dtm_diff)
@@ -333,9 +264,6 @@ cloudFlux <- methods::setRefClass(
     },
 
     summary_by_breaks = function(breaks, unit = "m") {
-      if (is.null(.self$ndsm_diff) || is.null(.self$dtm_diff)) {
-        stop("Diff rasters are not available. Run `run()` first.", call. = FALSE)
-      }
       list(
         ndsm = diff_summary_by_breaks(.self$ndsm_diff, breaks, unit = unit),
         dtm  = diff_summary_by_breaks(.self$dtm_diff,  breaks, unit = unit)
@@ -343,69 +271,72 @@ cloudFlux <- methods::setRefClass(
     },
 
     plot_hist = function(which = "ndsm", bins = 60, title = NULL) {
-      if (is.null(.self$ndsm_diff) || is.null(.self$dtm_diff)) {
-        stop("Diff rasters are not available. Run `run()` first.", call. = FALSE)
-      }
       which <- base::tolower(which)
       r <- if (identical(which, "dtm")) .self$dtm_diff else .self$ndsm_diff
-      if (is.null(title)) title <- if (identical(which, "dtm")) "DTM difference histogram" else "nDSM difference histogram"
+      if (is.null(title)) title <- if (identical(which, "dtm")) "DTM difference" else "nDSM difference"
       plot_diff_hist(r, bins = bins, title = title)
     },
 
     plot_binned = function(breaks, which = "ndsm", title = NULL) {
-      if (is.null(.self$ndsm_diff) || is.null(.self$dtm_diff)) {
-        stop("Diff rasters are not available. Run `run()` first.", call. = FALSE)
-      }
       which <- base::tolower(which)
       r <- if (identical(which, "dtm")) .self$dtm_diff else .self$ndsm_diff
-      if (is.null(title)) title <- if (identical(which, "dtm")) "DTM difference by bins" else "nDSM difference by bins"
+      if (is.null(title)) title <- if (identical(which, "dtm")) "DTM difference" else "nDSM difference"
       plot_diff_binned(r, breaks = breaks, title = title)
     },
 
-    map = function(diff_breaks = NULL,
-                   epsg = 4326,
-                   diff_palette = "viridis",
-                   diff_range = NULL,
-                   diff_quantiles = c(0.02, 0.98),
-                   diff_break_colors = NULL) {
-      if (is.null(.self$pc_source$DTM) || is.null(.self$pc_target$DTM) ||
-          is.null(.self$pc_source$ndsm) || is.null(.self$pc_target$ndsm)) {
-        stop("Base rasters are not available. Run `run()` first.", call. = FALSE)
-      }
-
+    # --- UPDATED QUANTILE DEFAULT (c(0, 1)) TO PREVENT HOLES IN LEAFLET MAPS ---
+    map = function(diff_breaks = NULL, epsg = 4326, diff_palette = "viridis",
+                   diff_range = NULL, diff_quantiles = c(0, 1), diff_break_colors = NULL) {
       displayMap(
         dtm1 = .self$pc_source$DTM, ndsm1 = .self$pc_source$ndsm,
         dtm2 = .self$pc_target$DTM, ndsm2 = .self$pc_target$ndsm,
         dtm_diff = .self$dtm_diff, ndsm_diff = .self$ndsm_diff,
-        area_mask = .self$mask_union,
-        epsg = epsg,
-        diff_palette = diff_palette,
-        diff_range = diff_range,
-        diff_quantiles = diff_quantiles,
-        diff_breaks = diff_breaks,
-        diff_break_colors = diff_break_colors
+        area_mask = .self$mask_union, epsg = epsg, diff_palette = diff_palette,
+        diff_range = diff_range, diff_quantiles = diff_quantiles,
+        diff_breaks = diff_breaks, diff_break_colors = diff_break_colors
       )
+    },
+
+    save_rasters = function(out_dir = ".", prefix = "cf") {
+      if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+
+      if (!is.null(.self$ndsm_diff)) {
+        terra::writeRaster(.self$ndsm_diff, file.path(out_dir, paste0(prefix, "_ndsm_diff.tif")), overwrite = TRUE)
+      }
+      if (!is.null(.self$dtm_diff)) {
+        terra::writeRaster(.self$dtm_diff, file.path(out_dir, paste0(prefix, "_dtm_diff.tif")), overwrite = TRUE)
+      }
+      if (!is.null(.self$aligned_dtm$source)) {
+        terra::writeRaster(.self$aligned_dtm$source, file.path(out_dir, paste0(prefix, "_dtm_source.tif")), overwrite = TRUE)
+        terra::writeRaster(.self$aligned_dtm$target, file.path(out_dir, paste0(prefix, "_dtm_target.tif")), overwrite = TRUE)
+      }
+      if (!is.null(.self$aligned_ndsm$source)) {
+        terra::writeRaster(.self$aligned_ndsm$source, file.path(out_dir, paste0(prefix, "_ndsm_source.tif")), overwrite = TRUE)
+        terra::writeRaster(.self$aligned_ndsm$target, file.path(out_dir, paste0(prefix, "_ndsm_target.tif")), overwrite = TRUE)
+      }
+      message("Rasters successfully saved to ", base::normalizePath(out_dir))
+      invisible(.self)
     }
   )
 )
 
 #' Create a cloudFlux object
 #'
-#' Convenience constructor for the cloudFlux reference class.
+#' Convenience constructor for the cloudFlux reference class workflow.
 #'
-#' @param source_path,target_path Character paths to LAS/LAZ inputs (optional if LAS provided).
-#' @param source_las,target_las `lidR::LAS` objects (optional if paths provided).
-#' @param epsg Integer EPSG used for the workflow (e.g., 26917).
-#' @param resolution Numeric raster resolution used for DTM/nDSM.
-#' @param run Logical; if TRUE runs the full workflow after initialization.
-#' @param icp_align Logical; if TRUE runs Open3D ICP (aligns target to source) before raster steps.
-#' @param icp_py Path to the Open3D ICP python script.
-#' @param icp_condaenv Conda environment name for reticulate to use.
-#' @param voxel_size,icp_method ICP parameters passed into the python class.
-#' @param method Resampling method for `process_raster()` (default "bilinear").
-#' @param k_sor1,m_sor1,k_sor2,m_sor2 SOR noise filter parameters.
+#' @param source_path Character path to the source LAS/LAZ file.
+#' @param target_path Character path to the target LAS/LAZ file.
+#' @param source_las `lidR::LAS` object for the source epoch.
+#' @param target_las `lidR::LAS` object for the target epoch.
+#' @param epsg Integer EPSG code for the working projection (default: 26917).
+#' @param resolution Numeric raster resolution for DTM/nDSM (default: 1).
+#' @param use_icp Logical; if TRUE, runs ICP alignment automatically (default: FALSE).
+#' @param use_gpu Logical; if TRUE, attempts GPU acceleration for ICP (default: TRUE).
+#' @param voxel_size Numeric voxel size for ICP downsampling (default: 0.05).
+#' @param icp_method Character; ICP method, e.g., "point-to-plane" (default).
 #'
-#' @return A cloudFlux reference-class object.
+#' @import reticulate
+#' @return A `cloudFlux` reference class object.
 #' @export
 cloudFlux_new <- function(source_path = character(0),
                           target_path = character(0),
@@ -413,30 +344,21 @@ cloudFlux_new <- function(source_path = character(0),
                           target_las = NULL,
                           epsg = 26917,
                           resolution = 1,
-                          run = FALSE,
-                          icp_align = FALSE,
-                          icp_py = "inst/py/icp_open3D.py",
-                          icp_condaenv = "icp_conda",
+                          use_icp = FALSE,
+                          use_gpu = TRUE,
                           voxel_size = 0.05,
-                          icp_method = "point-to-plane",
-                          method = "bilinear",
-                          k_sor1 = 5, m_sor1 = 3,
-                          k_sor2 = 20, m_sor2 = 5) {
-  cloudFlux$new(
+                          icp_method = "point-to-plane") {
+  cf <- cloudFlux$new(
     source_path = source_path,
     target_path = target_path,
     source_las = source_las,
     target_las = target_las,
     epsg = epsg,
     resolution = resolution,
-    run = run,
-    icp_align = icp_align,
-    icp_py = icp_py,
-    icp_condaenv = icp_condaenv,
+    use_icp = use_icp,
+    use_gpu = use_gpu,
     voxel_size = voxel_size,
-    icp_method = icp_method,
-    method = method,
-    k_sor1 = k_sor1, m_sor1 = m_sor1,
-    k_sor2 = k_sor2, m_sor2 = m_sor2
+    icp_method = icp_method
   )
+  return(cf)
 }
