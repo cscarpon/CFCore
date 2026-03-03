@@ -11,45 +11,12 @@ cloudFlux_new(
   target_las = NULL,
   epsg = 26917,
   resolution = 1,
-  run = FALSE,
-  icp_align = FALSE,
-  icp_py = "inst/py/icp_open3D.py",
-  icp_condaenv = "icp_conda",
+  use_icp = FALSE,
+  use_gpu = TRUE,
   voxel_size = 0.05,
-  icp_method = "point-to-plane",
-  method = "bilinear",
-  k_sor1 = 5,
-  m_sor1 = 3,
-  k_sor2 = 20,
-  m_sor2 = 5
+  icp_method = "point-to-plane"
 )
 }
-\arguments{
-\item{source_path, target_path}{Character paths to LAS/LAZ inputs (optional if LAS provided).}
-
-\item{source_las, target_las}{\code{lidR::LAS} objects (optional if paths provided).}
-
-\item{epsg}{Integer EPSG used for the workflow (e.g., 26917).}
-
-\item{resolution}{Numeric raster resolution used for DTM/nDSM.}
-
-\item{run}{Logical; if TRUE runs the full workflow after initialization.}
-
-\item{icp_align}{Logical; if TRUE runs Open3D ICP (aligns target to source) before raster steps.}
-
-\item{icp_py}{Path to the Open3D ICP python script.}
-
-\item{icp_condaenv}{Conda environment name for reticulate to use.}
-
-\item{voxel_size, icp_method}{ICP parameters passed into the python class.}
-
-\item{method}{Resampling method for \code{process_raster()} (default "bilinear").}
-
-\item{k_sor1, m_sor1, k_sor2, m_sor2}{SOR noise filter parameters.}
-}
-\value{
-A cloudFlux reference-class object.
-}
 \description{
-Convenience constructor for the cloudFlux reference class.
+Create a cloudFlux object
 }
