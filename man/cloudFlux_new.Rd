@@ -17,6 +17,30 @@ cloudFlux_new(
   icp_method = "point-to-plane"
 )
 }
+\arguments{
+\item{source_path}{Character path to the source LAS/LAZ file.}
+
+\item{target_path}{Character path to the target LAS/LAZ file.}
+
+\item{source_las}{\code{lidR::LAS} object for the source epoch.}
+
+\item{target_las}{\code{lidR::LAS} object for the target epoch.}
+
+\item{epsg}{Integer EPSG code for the working projection (default: 26917).}
+
+\item{resolution}{Numeric raster resolution for DTM/nDSM (default: 1).}
+
+\item{use_icp}{Logical; if TRUE, runs ICP alignment automatically (default: FALSE).}
+
+\item{use_gpu}{Logical; if TRUE, attempts GPU acceleration for ICP (default: TRUE).}
+
+\item{voxel_size}{Numeric voxel size for ICP downsampling (default: 0.05).}
+
+\item{icp_method}{Character; ICP method, e.g., "point-to-plane" (default).}
+}
+\value{
+A \code{cloudFlux} reference class object.
+}
 \description{
-Create a cloudFlux object
+Convenience constructor for the cloudFlux reference class workflow.
 }

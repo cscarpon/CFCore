@@ -6,3 +6,4 @@
 ^doc$
 ^Meta$
 ^\.github$
+^cfcore_outputs$

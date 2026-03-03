@@ -322,6 +322,21 @@ cloudFlux <- methods::setRefClass(
 
 #' Create a cloudFlux object
 #'
+#' Convenience constructor for the cloudFlux reference class workflow.
+#'
+#' @param source_path Character path to the source LAS/LAZ file.
+#' @param target_path Character path to the target LAS/LAZ file.
+#' @param source_las `lidR::LAS` object for the source epoch.
+#' @param target_las `lidR::LAS` object for the target epoch.
+#' @param epsg Integer EPSG code for the working projection (default: 26917).
+#' @param resolution Numeric raster resolution for DTM/nDSM (default: 1).
+#' @param use_icp Logical; if TRUE, runs ICP alignment automatically (default: FALSE).
+#' @param use_gpu Logical; if TRUE, attempts GPU acceleration for ICP (default: TRUE).
+#' @param voxel_size Numeric voxel size for ICP downsampling (default: 0.05).
+#' @param icp_method Character; ICP method, e.g., "point-to-plane" (default).
+#'
+#' @import reticulate
+#' @return A `cloudFlux` reference class object.
 #' @export
 cloudFlux_new <- function(source_path = character(0),
                           target_path = character(0),

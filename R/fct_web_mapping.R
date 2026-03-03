@@ -426,6 +426,30 @@ addDiffRasterLayer <- function(map, diff_raster, group,
   leaflet::addRasterImage(map, diff_raster, colors = pal, group = group, maxBytes = Inf, opacity = 1)
 }
 
+#' Add a legend for a continuous raster layer
+#'
+#' @keywords internal
+addLegendLayer <- function(map, raster, title, layerId, color_palette) {
+  if (is.null(raster)) return(map)
+
+  vals <- cfcore_values_non_na(raster)
+  if (base::length(vals) == 0L) return(map)
+
+  pal <- leaflet::colorNumeric(color_palette, domain = vals, na.color = "transparent")
+
+  leaflet::addLegend(
+    map,
+    pal = pal,
+    values = vals,
+    position = "bottomright",
+    title = title,
+    layerId = layerId,
+    opacity = 1,
+    # FIX: Use transform to physically flip the legend drawing order
+    labFormat = leaflet::labelFormat(transform = function(x) base::sort(x, decreasing = TRUE))
+  )
+}
+
 #' Add a continuous legend for a difference raster (with controlled domain)
 #'
 #' @keywords internal
@@ -441,7 +465,6 @@ addDiffLegend <- function(map, diff_raster, title, layerId,
 
   pal <- leaflet::colorNumeric(palette = palette, domain = domain, na.color = "transparent")
 
-  # REVERSED DIFFERENCE LEGEND HERE
   leaflet::addLegend(
     map,
     pal = pal,
@@ -450,7 +473,8 @@ addDiffLegend <- function(map, diff_raster, title, layerId,
     title = title,
     layerId = layerId,
     opacity = 1,
-    reverse = TRUE
+    # FIX: Use transform to physically flip the legend drawing order
+    labFormat = leaflet::labelFormat(transform = function(x) base::sort(x, decreasing = TRUE))
   )
 }
 

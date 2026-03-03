@@ -6,18 +6,6 @@
 \usage{
 addRasterLayer(map, raster, name, color_palette)
 }
-\arguments{
-\item{map}{Leaflet map.}
-
-\item{raster}{\code{terra::SpatRaster} or \code{NULL}.}
-
-\item{name}{Group name for leaflet layer control.}
-
-\item{color_palette}{Palette name or vector accepted by \code{leaflet::colorNumeric()}.}
-}
-\value{
-Leaflet map.
-}
 \description{
 Add a continuous raster layer to a leaflet map
 }

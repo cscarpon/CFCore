@@ -31,7 +31,8 @@ Imports:
     rmapshaper,
     nngeo,
     htmlwidgets,
-    reticulate
+    reticulate,
+    Morpho
 Suggests:
     knitr,
     rmarkdown,

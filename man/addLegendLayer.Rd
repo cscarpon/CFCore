@@ -5,22 +5,12 @@
 \title{Add a legend for a continuous raster layer}
 \usage{
 addLegendLayer(map, raster, title, layerId, color_palette)
-}
-\arguments{
-\item{map}{Leaflet map.}
 
-\item{raster}{\code{terra::SpatRaster} or \code{NULL}.}
-
-\item{title}{Legend title.}
-
-\item{layerId}{Leaflet layer ID.}
-
-\item{color_palette}{Palette name or vector accepted by \code{leaflet::colorNumeric()}.}
-}
-\value{
-Leaflet map.
+addLegendLayer(map, raster, title, layerId, color_palette)
 }
 \description{
+Add a legend for a continuous raster layer
+
 Add a legend for a continuous raster layer
 }
 \keyword{internal}

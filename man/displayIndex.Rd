@@ -6,16 +6,6 @@
 \usage{
 displayIndex(index, epsg = 4326, measure_colors = c("#3D535D", "#7D4479"))
 }
-\arguments{
-\item{index}{\code{sf::sfc} or \code{sf} geometry representing an extent polygon.}
-
-\item{epsg}{EPSG integer for display CRS (defaults to 4326).}
-
-\item{measure_colors}{Length-2 character vector for measure tool colors.}
-}
-\value{
-A \code{leaflet} map widget.
-}
 \description{
 Display index polygons for loaded spatial containers
 }
