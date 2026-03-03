@@ -75,10 +75,11 @@ data("TTP_23", package = "CFCore")
 cc <- cloudFlux_new(
   source_las = TTP_15,
   target_las = TTP_23,
-  epsg = 26917,
-  resolution = 1,
-  use_icp = TRUE,     # Automatically run Open3D ICP alignment during execution
-  use_gpu = TRUE      # Toggle CUDA GPU acceleration (falls back to CPU if unavailable)
+  epsg       = 26917,
+  use_icp    = TRUE,
+  use_gpu    = TRUE,
+  voxel_size = 0.5,
+  icp_method = "point-to-plane"
 )
 
 # Execute the full workflow (Alignment -> Masking -> Rasterization -> Differencing)
@@ -122,13 +123,11 @@ cc$run()
 cc <- cloudFlux_new(
   source_las = TTP_15,
   target_las = TTP_23,
-  epsg = 26917,
-  icp_align = TRUE,
-  icp_condaenv = "icp_conda",
-  voxel_size = 0.05,
-  icp_method = "point-to-plane",
-  icp_use_gpu = TRUE,   # optional (default TRUE)
-  icp_max_iter = 50     # optional (default 50)
+  epsg       = 26917,
+  use_icp    = TRUE,
+  use_gpu    = TRUE,
+  voxel_size = 0.5,
+  icp_method = "point-to-plane"
 )
 
 cc$run()
