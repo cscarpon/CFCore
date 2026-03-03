@@ -5,12 +5,8 @@
 \title{Add a legend for a continuous raster layer}
 \usage{
 addLegendLayer(map, raster, title, layerId, color_palette)
-
-addLegendLayer(map, raster, title, layerId, color_palette)
 }
 \description{
-Add a legend for a continuous raster layer
-
 Add a legend for a continuous raster layer
 }
 \keyword{internal}
