@@ -86,14 +86,19 @@ cloudFlux <- methods::setRefClass(
       if (!is.null(.self$pc_source$LPC)) .self$pc_source$set_crs(.self$epsg)
       if (!is.null(.self$pc_target$LPC)) .self$pc_target$set_crs(.self$epsg)
 
-      if (isTRUE(.self$use_icp)) {
+      # --- THE ICP TOGGLE FIX ---
+      # We use isTRUE() to handle cases where use_icp might be NA or NULL
+      if (base::isTRUE(.self$use_icp)) {
         message(sprintf("Running ICP Alignment (GPU requested: %s)...", .self$use_gpu))
         .self$icp_align_open3d(
           voxel_size = .self$voxel_size,
           icp_method = .self$icp_method,
           use_gpu = .self$use_gpu
         )
+      } else {
+        message("Skipping ICP Alignment (use_icp = FALSE). Using raw coordinate space.")
       }
+      # --------------------------
 
       message("Building masks...")
       .self$build_masks()
@@ -161,7 +166,7 @@ cloudFlux <- methods::setRefClass(
       invisible(.self)
     },
 
-    icp_align_open3d = function(icp_py = "inst/py/icp_hybrid.py", # Make sure this matches your script name!
+    icp_align_open3d = function(icp_py = "inst/py/icp_hybrid.py",
                                 icp_condaenv = "icp_conda",
                                 voxel_size = 0.05,
                                 icp_method = "point-to-plane",
@@ -176,8 +181,9 @@ cloudFlux <- methods::setRefClass(
       }
       if (!base::file.exists(icp_py)) stop("ICP python script not found: ", icp_py)
 
-      t0 <- base::Sys.time() # START TIMER
+      t0 <- base::Sys.time()
 
+      # Temporary paths for Python to ingest
       source_path <- base::file.path(base::tempdir(), "cfcore_icp_source.laz")
       target_path <- base::file.path(base::tempdir(), "cfcore_icp_target.laz")
 
@@ -206,13 +212,15 @@ cloudFlux <- methods::setRefClass(
       .self$icp_aligned_path <- base::as.character(aligned_path)
       .self$timings$icp_message <- base::as.character(msg)
 
-      .self$pc_target <- spatial_container$new(file_path = .self$icp_aligned_path)
-      .self$pc_target$set_crs(.self$epsg)
+      # --- THE FIX: Update SOURCE, not TARGET ---
+      # We load the aligned 2015 data back into the pc_source container.
+      # This preserves pc_target as our static reference anchor.
+      .self$pc_source <- spatial_container$new(file_path = .self$icp_aligned_path)
+      .self$pc_source$set_crs(.self$epsg)
 
-      # STOP TIMER AND PRINT
       t_end <- base::Sys.time()
       duration <- base::round(base::difftime(t_end, t0, units = "secs"), 2)
-      message(sprintf("ICP Alignment completed in %s seconds.", duration))
+      message(sprintf("ICP Alignment completed in %s seconds. Source (2015) updated.", duration))
 
       .self$timings$icp_total <- duration
       invisible(.self)
