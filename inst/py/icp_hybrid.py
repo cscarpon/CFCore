@@ -38,7 +38,8 @@ class HybridICP:
     ):
         self.source_path = source_path
         self.target_path = target_path
-        self.aligned_path = self._generate_aligned_path(target_path)
+        # FIX: Generate aligned path from the Source (Moving), not Target
+        self.aligned_path = self._generate_aligned_path(source_path)
 
         self.voxel_size = float(voxel_size)
         self.icp_method = str(icp_method)
@@ -91,10 +92,10 @@ class HybridICP:
         except Exception as e:
             return None, f"Error during ICP alignment ({self.engine}): {str(e)}"
 
-        # 4. Uncenter the transformation matrix
+        # 4. Uncenter the transformation matrix (FIXED ALGEBRA FOR SRC -> TGT)
         R = T_centered[:3, :3]
         t = T_centered[:3, 3]
-        t_final = t + src_c - R @ tgt_c
+        t_final = t - R @ src_c + tgt_c
 
         T_final = np.eye(4, dtype=np.float64)
         T_final[:3, :3] = R
@@ -103,11 +104,11 @@ class HybridICP:
         self.transformation = T_final
         self.rmse = float(rmse)
 
-        # 5. Apply transformation to the ORIGINAL target points
-        tgt_pts_transformed = (tgt_pts @ R.T) + t_final
+        # 5. Apply transformation to the ORIGINAL SOURCE points
+        src_pts_transformed = (src_pts @ R.T) + t_final
         
-        # 6. Save outputs
-        aligned_data = self._merge_metadata(tgt_pts_transformed, tgt_metadata)
+        # 6. Save outputs with Source metadata
+        aligned_data = self._merge_metadata(src_pts_transformed, src_metadata)
         self._save_as_laz(aligned_data)
 
         output_str = (
@@ -147,19 +148,20 @@ class HybridICP:
             threshold = vs * self.threshold_factor
             crit = cph.registration.ICPConvergenceCriteria(max_iteration=int(iters))
 
+            # FIX: Passed (src, tgt) instead of (tgt, src)
             if use_p2l:
                 try:
                     result = cph.registration.registration_icp(
-                        tgt, src, threshold, T,
+                        src, tgt, threshold, T,
                         cph.registration.TransformationEstimationPointToPlane(), crit
                     )
                 except RuntimeError:
                     result = cph.registration.registration_icp(
-                        tgt, src, threshold, T, cph.registration.TransformationEstimationPointToPoint(), crit
+                        src, tgt, threshold, T, cph.registration.TransformationEstimationPointToPoint(), crit
                     )
             else:
                 result = cph.registration.registration_icp(
-                    tgt, src, threshold, T, cph.registration.TransformationEstimationPointToPoint(), crit
+                    src, tgt, threshold, T, cph.registration.TransformationEstimationPointToPoint(), crit
                 )
 
             T = result.transformation
@@ -202,18 +204,19 @@ class HybridICP:
             threshold = vs * self.threshold_factor
             crit = o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=int(iters))
 
+            # FIX: Passed (src, tgt) instead of (tgt, src)
             if use_p2l:
                 try:
                     result = o3d.pipelines.registration.registration_icp(
-                        tgt, src, threshold, T, o3d.pipelines.registration.TransformationEstimationPointToPlane(), crit
+                        src, tgt, threshold, T, o3d.pipelines.registration.TransformationEstimationPointToPlane(), crit
                     )
                 except RuntimeError:
                     result = o3d.pipelines.registration.registration_icp(
-                        tgt, src, threshold, T, o3d.pipelines.registration.TransformationEstimationPointToPoint(), crit
+                        src, tgt, threshold, T, o3d.pipelines.registration.TransformationEstimationPointToPoint(), crit
                     )
             else:
                 result = o3d.pipelines.registration.registration_icp(
-                    tgt, src, threshold, T, o3d.pipelines.registration.TransformationEstimationPointToPoint(), crit
+                    src, tgt, threshold, T, o3d.pipelines.registration.TransformationEstimationPointToPoint(), crit
                 )
 
             T = result.transformation
@@ -224,7 +227,7 @@ class HybridICP:
 
         return T, last_rmse
 
-    # --- IO METHODS (Same for both) ---
+    # --- IO METHODS ---
     def _load_las_data(self, file_path):
         if file_path.endswith(".las") or file_path.endswith(".laz"):
             with laspy.open(file_path) as las_file:
@@ -296,7 +299,6 @@ class HybridICP:
     def _save_as_laz(self, aligned_data):
         has_meta = ("classification" in aligned_data.dtype.names)
         
-        # --- THE FIX IS HERE ---
         # Dynamically match the original file's format to support >7 returns
         if self.original_header is not None:
             header = laspy.LasHeader(
@@ -305,7 +307,6 @@ class HybridICP:
             )
         else:
             header = laspy.LasHeader(point_format=6, version="1.4") # Format 6 supports up to 15 returns
-        # -----------------------
 
         header.scales = np.array([0.01, 0.01, 0.01], dtype=np.float64)
         header.offsets = np.min(

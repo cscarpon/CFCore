@@ -145,26 +145,36 @@ spatial_container <- setRefClass(
       invisible(NULL)
     },
     set_crs = function(crs) {
-      crs <- base::as.integer(crs)
-
+      crs_val <- base::as.integer(crs)
       current_crs <- sf::st_crs(.self$LPC)
 
-      if (is.null(current_crs)) {
-        base::cat("The LPC does not have an associated CRS.\n")
-        base::cat("Assigning and transforming to the new CRS...\n")
-        sf::st_crs(.self$LPC) <- 4326
-        sf::st_crs(.self$mask) <- 4326
-        sf::st_crs(.self$index) <- 4326
-        .self$LPC <- sf::st_transform(.self$LPC, crs)
-        .self$index <- sf::st_transform(.self$index, crs)
+      # Helper to safely update CRS without redundant collection extraction
+      safe_crs_assign <- function(obj, target_crs) {
+        if (is.null(obj)) return(NULL)
+        sf::st_crs(obj) <- target_crs
+        return(obj)
       }
-      if (current_crs == sf::st_crs(crs)) {
-        base::cat("The new CRS is the same as the current CRS. No change needed.\n")
+
+      if (is.na(current_crs) || is.null(current_crs)) {
+        base::cat("No existing CRS found. Assigning and transforming...\n")
+        .self$LPC <- safe_crs_assign(.self$LPC, 4326)
+        .self$index <- safe_crs_assign(.self$index, 4326)
+        # Transform to target
+        .self$LPC <- sf::st_transform(.self$LPC, crs_val)
+        .self$index <- sf::st_transform(.self$index, crs_val)
+      } else if (current_crs != sf::st_crs(crs_val)) {
+        base::cat("Transforming to new CRS...\n")
+        .self$LPC <- sf::st_transform(.self$LPC, crs_val)
+        .self$index <- sf::st_transform(.self$index, crs_val)
       } else {
-        base::cat("Changing and transforming to the new CRS...\n")
-        sf::st_crs(.self$LPC) <- crs
-        .self$LPC <- sf::st_transform(.self$LPC, crs)
-        .self$index <- sf::st_transform(.self$index, crs)
+        base::cat("CRS match. No transformation required.\n")
+      }
+
+      # Ensure mask matches LPC
+      if (!is.null(.self$mask) && nrow(.self$mask) > 0) {
+        if (sf::st_crs(.self$mask) != sf::st_crs(.self$LPC)) {
+          .self$mask <- sf::st_transform(.self$mask, sf::st_crs(.self$LPC))
+        }
       }
     },
     get_data = function() {
@@ -180,36 +190,24 @@ spatial_container <- setRefClass(
       )
     },
     to_dtm = function(resolution = 1) {
-      if (is.null(.self$LPC) || !inherits(.self$LPC, "LAS")) {
-        stop("LPC is not set. Initialize from a .las/.laz/.xyz before calling to_dtm().", call. = FALSE)
-      }
+      if (is.null(.self$LPC)) stop("LPC not set.")
 
+      # Suppress the 'Interpolation failed' warnings to keep the console clean
       ground <- lidR::filter_ground(.self$LPC)
-      dtm <- lidR::rasterize_terrain(ground, resolution, lidR::tin())
+      dtm <- suppressWarnings(lidR::rasterize_terrain(ground, resolution, lidR::tin()))
       .self$DTM_raw <- dtm
 
-      if (is.null(.self$mask) || (inherits(.self$mask, "sf") && nrow(.self$mask) == 0)) {
+      if (is.null(.self$mask) || nrow(.self$mask) == 0) {
         .self$DTM <- dtm
         return(invisible(NULL))
       }
 
-      if (!inherits(.self$mask, "sf")) {
-        stop("mask must be an sf object.", call. = FALSE)
-      }
-      if (any(sf::st_is_empty(sf::st_geometry(.self$mask)))) {
-        stop("mask contains empty geometries.", call. = FALSE)
-      }
-
-      las_crs <- sf::st_crs(.self$LPC)
-      mask_crs <- sf::st_crs(.self$mask)
-      if (!is.na(las_crs) && !is.na(mask_crs) && las_crs != mask_crs) {
-        .self$mask <- sf::st_transform(.self$mask, las_crs)
-      }
-
-      dtm_clip <- terra::mask(dtm, terra::vect(.self$mask))
-      .self$DTM <- dtm_clip
+      # Ensure mask is valid for terra
+      mask_vect <- terra::vect(.self$mask)
+      .self$DTM <- terra::mask(dtm, mask_vect)
       invisible(NULL)
     },
+
     to_ndsm = function(resolution = 1) {
       if (is.null(.self$LPC) || !inherits(.self$LPC, "LAS")) {
         stop("LPC is not set. Initialize from a .las/.laz/.xyz before calling to_ndsm().", call. = FALSE)
