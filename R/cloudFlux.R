@@ -201,8 +201,9 @@ cloudFlux <- methods::setRefClass(
       )
 
       res <- icp_aligner$align()
+      aligned_path <- as.character(res[[1]])
 
-      aligned_path <- tryCatch(res[[1]], error = function(e) NULL)
+      if (!file.exists(aligned_path)) stop("Aligned file was never created by Python.")
       msg <- tryCatch(res[[2]], error = function(e) NULL)
 
       if (is.null(aligned_path) || !base::nzchar(base::as.character(aligned_path))) {
@@ -212,11 +213,12 @@ cloudFlux <- methods::setRefClass(
       .self$icp_aligned_path <- base::as.character(aligned_path)
       .self$timings$icp_message <- base::as.character(msg)
 
-      # --- THE FIX: Update SOURCE, not TARGET ---
-      # We load the aligned 2015 data back into the pc_source container.
+
       # This preserves pc_target as our static reference anchor.
-      .self$pc_source <- spatial_container$new(file_path = .self$icp_aligned_path)
+      .self$pc_source <- spatial_container$new(file_path = aligned_path)
       .self$pc_source$set_crs(.self$epsg)
+
+      message("Container refreshed with aligned Source data.")
 
       t_end <- base::Sys.time()
       duration <- base::round(base::difftime(t_end, t0, units = "secs"), 2)
