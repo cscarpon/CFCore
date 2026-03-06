@@ -69,53 +69,49 @@ class HybridICP:
                 print("CFCore ICP: Using Open3D CPU processing.")
 
     def align(self):
-        # 1. Load raw data
         src_pts, src_metadata = self._load_las_data(self.source_path)
         tgt_pts, tgt_metadata = self._load_las_data(self.target_path)
 
         if src_pts is None or tgt_pts is None:
             return None, "Error: Failed to load point clouds."
 
-        # 2. Universal Centering (Required for both engines to maintain precision)
+        # 1. Universal Centering (Crucial for 32-bit GPU precision)
         src_c = src_pts.mean(axis=0)
         tgt_c = tgt_pts.mean(axis=0)
         
-        src_pts_centered = src_pts - src_c
-        tgt_pts_centered = tgt_pts - tgt_c
+        src_pts_centered = (src_pts - src_c).astype(np.float32)
+        tgt_pts_centered = (tgt_pts - tgt_c).astype(np.float32)
 
-        # 3. Route to the correct execution engine
+        # 2. Alignment
         try:
             if self.engine == "CUPOCH_GPU":
                 T_centered, rmse = self._run_cupoch_gpu(src_pts_centered, tgt_pts_centered)
             else:
                 T_centered, rmse = self._run_open3d_cpu(src_pts_centered, tgt_pts_centered)
         except Exception as e:
-            return None, f"Error during ICP alignment ({self.engine}): {str(e)}"
+            return None, f"Error during ICP alignment: {str(e)}"
 
-        # 4. Uncenter the transformation matrix (FIXED ALGEBRA FOR SRC -> TGT)
-        R = T_centered[:3, :3]
-        t = T_centered[:3, 3]
-        t_final = t - R @ src_c + tgt_c
-
-        T_final = np.eye(4, dtype=np.float64)
-        T_final[:3, :3] = R
-        T_final[:3, 3] = t_final
-
-        self.transformation = T_final
-        self.rmse = float(rmse)
-
-        # 5. Apply transformation to the ORIGINAL SOURCE points
-        src_pts_transformed = (src_pts @ R.T) + t_final
+        # 3. Robust Uncentering Logic
+        R = T_centered[:3, :3].astype(np.float64)
+        t = T_centered[:3, 3].astype(np.float64)
         
-        # 6. Save outputs with Source metadata
+        # Mapping: Source_Global -> Source_Centered -> Target_Centered -> Target_Global
+        t_final = tgt_c + t - R @ src_c
+
+        # 4. EXPLICIT POINT TRANSFORMATION
+        # We transform the double-precision raw points using the double-precision matrix
+        src_pts_transformed = (src_pts @ R.T) + t_final
+
+        # 5. Metadata Merging (Forced sync)
+        # Ensure we are saving the TRANSFORMED points, not the original
         aligned_data = self._merge_metadata(src_pts_transformed, src_metadata)
+        
         self._save_as_laz(aligned_data)
 
-        output_str = (
-            f"ICP Alignment Completed via {self.engine}.\n"
-            f"Method: {self.icp_method} | RMSE: {self.rmse:.6f}\n"
-        )
-        return self.aligned_path, output_str
+        # Diagnostic output for R console
+        print(f"--- ICP SUCCESS ---\nShift Vector (m): {t_final}\nRMSE: {rmse:.6f}")
+
+        return self.aligned_path, "Alignment Complete"
 
     # --- CUPOCH GPU ENGINE ---
     def _run_cupoch_gpu(self, src_pts_centered, tgt_pts_centered):
